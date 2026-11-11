@@ -1,0 +1,15 @@
+{
+    "environment": "development",
+    "db_host": "localhost",
+    "db_port": 3306,
+    "db_name": "your_database_name",
+    "db_user": "your_database_user",
+    "db_password": "replace-with-a-private-password",
+    "session_idle_seconds": 1800,
+    "session_absolute_seconds": 28800,
+    "password_cost": 12,
+    "image_max_dimension": 4096,
+    "image_max_pixels": 4000000,
+    "image_storage_quota_bytes": 104857600,
+    "image_storage_max_files": 2048
+}

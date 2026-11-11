@@ -1,0 +1,42 @@
+* { box-sizing: border-box; }
+body { margin: 0; padding: 1.5rem; background: #f4f1ea; color: #111; font-family: system-ui, sans-serif; }
+.print-toolbar { max-width: 180mm; margin: 0 auto 1rem; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.print-toolbar button { border: 0; border-radius: 6px; background: #805b03; color: white; padding: 0.7rem 1rem; font: inherit; cursor: pointer; }
+.print-toolbar button[hidden] { display: none; }
+.print-toolbar span { font-size: 0.85rem; }
+.owner-label { max-width: 180mm; margin: 0 auto; padding: 8mm; background: white; border: 1px solid #222; }
+.owner-brand { display: flex; align-items: center; justify-content: space-between; gap: 6mm; border-bottom: 1px solid #444; padding-bottom: 6mm; }
+.owner-logo { display: block; max-width: 65mm; max-height: 32mm; object-fit: contain; }
+h1 { font-size: 21pt; margin: 0; overflow-wrap: anywhere; }
+h2 { font-size: 17pt; margin: 6mm 0; }
+.owner-label-content { display: grid; grid-template-columns: minmax(0, 1fr) 46mm; gap: 8mm; }
+.owner-contact { margin: 0; }
+.owner-contact > div { margin-bottom: 5mm; break-inside: avoid; }
+dt { font-size: 10pt; font-weight: 600; }
+dd { margin: 1mm 0 0; font-size: 14pt; line-height: 1.4; overflow-wrap: anywhere; }
+a { color: inherit; text-decoration: none; }
+a:hover { text-decoration: underline; }
+.owner-qr-block { text-align: center; }
+#owner-qr { width: 46mm; height: 46mm; max-width: 100%; background: white; }
+#owner-qr svg { display: block; width: 100%; height: auto; }
+.owner-qr-block p { font-size: 10pt; }
+.owner-label footer { border-top: 1px solid #ddd; margin-top: 5mm; padding-top: 3mm; }
+.owner-public-url { display: block; font-size: 8pt; overflow-wrap: anywhere; }
+@media screen and (max-width: 600px) {
+    body { padding: 0.75rem; }
+    .owner-label { padding: 5mm; }
+    .owner-brand { flex-direction: column; align-items: flex-start; }
+    .owner-logo { max-width: 100%; }
+    .owner-label-content { grid-template-columns: minmax(0, 1fr); }
+    .owner-qr-block { justify-self: center; width: 46mm; }
+}
+@page { size: A4 portrait; margin: 12mm; }
+@media print {
+    body { padding: 0; background: white; }
+    .print-toolbar { display: none !important; }
+    .owner-label { width: 180mm; max-width: 100%; break-inside: avoid; margin: 0 auto; }
+    .owner-logo, #owner-qr { display: block !important; }
+    .owner-brand { flex-direction: row; }
+    .owner-label-content { grid-template-columns: minmax(0, 1fr) 46mm; }
+    .owner-label footer a::after { content: none; }
+}

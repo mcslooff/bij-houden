@@ -1,0 +1,22 @@
+CREATE TABLE IF NOT EXISTS tasks (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  group_id INT UNSIGNED NOT NULL,
+  title VARCHAR(150) NOT NULL,
+  description TEXT NULL,
+  target_date DATE NULL,
+  priority ENUM('none', 'high', 'medium', 'low') NOT NULL DEFAULT 'none',
+  assigned_to INT UNSIGNED NULL,
+  created_by INT UNSIGNED NULL,
+  completed_at DATETIME NULL,
+  completed_by INT UNSIGNED NULL,
+  completed_by_name VARCHAR(255) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_tasks_group FOREIGN KEY (group_id) REFERENCES `groups` (id) ON DELETE RESTRICT,
+  CONSTRAINT fk_tasks_assignee FOREIGN KEY (assigned_to) REFERENCES users (id) ON DELETE SET NULL,
+  CONSTRAINT fk_tasks_creator FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE SET NULL,
+  CONSTRAINT fk_tasks_completer FOREIGN KEY (completed_by) REFERENCES users (id) ON DELETE SET NULL,
+  INDEX idx_tasks_group_status (group_id, completed_at),
+  INDEX idx_tasks_assignee (assigned_to),
+  INDEX idx_tasks_target (target_date)
+) ENGINE = InnoDB;

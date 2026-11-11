@@ -1,0 +1,6 @@
+Require all granted
+Options -Indexes
+DirectoryIndex index.php
+RewriteEngine On
+RewriteRule ^index\.php$ - [END]
+RewriteRule ^ index.php [END]

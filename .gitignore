@@ -1,0 +1,18 @@
+/config/*.local.json
+/config/*.local.php
+/.env
+/.env.*
+/uploads/**
+**/__pycache__/
+*.pyc
+*.log
+*.sql.gz
+/backups/
+/logs/
+# Host-specific operational history and Pi deployment helpers stay on the Pi only.
+/PLAN.md
+/deployment/
+/phase5-apply.sh
+/phase5-verify-operations.sh
+/restore-rehearsal.sh
+/sandbox-setup.sh
