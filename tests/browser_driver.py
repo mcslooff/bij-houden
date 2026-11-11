@@ -17,6 +17,17 @@ from pathlib import Path
 
 class Chromium:
     def __enter__(self):
+        try:
+            return self.start()
+        except Exception as error:
+            diagnostics = ''
+            if hasattr(self, 'browser_log'):
+                self.browser_log.seek(0)
+                diagnostics = self.browser_log.read()[-6000:].decode(errors='replace').strip()
+            self.__exit__()
+            raise RuntimeError(str(error) + ('\nBrowser startup output:\n' + diagnostics if diagnostics else '')) from error
+
+    def start(self):
         self.directory = tempfile.TemporaryDirectory(dir=os.environ.get('BIJHOUDEN_TEST_TEMP_DIRECTORY', '/tmp/opencode'))
         self.profile = Path(self.directory.name)
         resolver = []
@@ -25,12 +36,14 @@ class Chromium:
             if connect_address != '127.0.0.1' or os.environ.get('BIJHOUDEN_ENV') != 'test':
                 raise RuntimeError('Browser staging resolver override requires explicit test/loopback scope.')
             resolver = ['--host-resolver-rules=MAP pai01.home 127.0.0.1']
-        self.process = subprocess.Popen(['chromium', '--headless', '--no-sandbox', '--disable-gpu',
+        self.browser_log = tempfile.TemporaryFile()
+        executable = os.environ.get('BIJHOUDEN_TEST_BROWSER', 'chromium')
+        self.process = subprocess.Popen([executable, '--headless', '--no-sandbox', '--disable-gpu',
             '--password-store=basic', '--use-mock-keychain', '--no-first-run', '--disable-dev-shm-usage',
             '--disable-background-networking', '--no-proxy-server', '--remote-debugging-address=127.0.0.1',
             '--remote-debugging-port=0', '--user-data-dir=' + str(self.profile), *resolver, 'about:blank'],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-        for _ in range(200):
+            stdout=self.browser_log, stderr=subprocess.STDOUT, start_new_session=True)
+        for _ in range(1200):
             port_file = self.profile / 'DevToolsActivePort'
             if port_file.exists():
                 self.port = int(port_file.read_text().splitlines()[0])
@@ -39,7 +52,6 @@ class Chromium:
                 raise RuntimeError('Chromium did not start')
             time.sleep(0.05)
         else:
-            self.process.terminate()
             raise RuntimeError('Chromium debugging endpoint did not start')
         target = json.load(urllib.request.urlopen(urllib.request.Request(
             f'http://127.0.0.1:{self.port}/json/new?about:blank', method='PUT')))
@@ -64,13 +76,19 @@ class Chromium:
     def __exit__(self, *args):
         if hasattr(self, 'socket'):
             self.socket.close()
-        if self.process.poll() is None:
-            os.killpg(self.process.pid, signal.SIGTERM)
-        try:
-            self.process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            os.killpg(self.process.pid, signal.SIGKILL); self.process.wait(timeout=5)
-        self.directory.cleanup()
+        if hasattr(self, 'process'):
+            try:
+                os.killpg(self.process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            try:
+                self.process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                os.killpg(self.process.pid, signal.SIGKILL); self.process.wait(timeout=5)
+        if hasattr(self, 'browser_log'):
+            self.browser_log.close()
+        if hasattr(self, 'directory'):
+            self.directory.cleanup()
 
     def read(self, size):
         while len(self.buffer) < size:

@@ -100,13 +100,12 @@ jobs:
           /usr/bin/python3 -m venv "$RUNNER_TEMP/ci-python"
           "$RUNNER_TEMP/ci-python/bin/python" -m pip install -r tests/requirements-ci.txt
           echo "$RUNNER_TEMP/ci-python/bin" >> "$GITHUB_PATH"
-          if ! command -v chromium > /dev/null; then
-            chrome="$(command -v google-chrome || command -v chromium-browser)"
-            test -n "$chrome"
-            sudo ln -s "$chrome" /usr/local/bin/chromium
-          fi
+          # Prefer the runner's Chrome, not an Ubuntu Chromium Snap launcher.
+          chrome="$(command -v google-chrome)"
+          test -x "$chrome"
+          echo "BIJHOUDEN_TEST_BROWSER=$chrome" >> "$GITHUB_ENV"
           "$RUNNER_TEMP/ci-python/bin/python" -c 'import cv2, numpy; from PIL import Image'
-          chromium --version
+          "$chrome" --version
 
       - name: Prepare isolated test directories
         run: |
