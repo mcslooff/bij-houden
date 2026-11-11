@@ -1,8 +1,10 @@
 import os
+import http.server
 import socket
 import subprocess
 import tempfile
 import time
+import threading
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -78,10 +80,27 @@ def run():
     assert retry.returncode == 1 and 'already exists' in retry.stderr
     print('PASS: CLI-only administrator bootstrap, validation and concurrent first-admin protection')
 
-    wrong_target = dict(os.environ, BIJHOUDEN_TEST_URL='http://localhost:8080')
-    result = subprocess.run(['python3', '-B', '-c', 'import integration'], cwd=test.ROOT / 'tests',
-        env=wrong_target, text=True, capture_output=True)
-    assert result.returncode != 0 and 'must be a test server' in result.stderr
+    # A reachable server without the test identity headers must be refused.
+    # Own this fixture rather than depending on a running development server.
+    class UnidentifiedServer(http.server.BaseHTTPRequestHandler):
+        def do_HEAD(self):
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    with http.server.ThreadingHTTPServer(('127.0.0.1', 0), UnidentifiedServer) as server:
+        worker = threading.Thread(target=server.serve_forever, daemon=True)
+        worker.start()
+        try:
+            wrong_target = dict(os.environ, BIJHOUDEN_TEST_URL='http://127.0.0.1:' + str(server.server_port))
+            result = subprocess.run(['python3', '-B', '-c', 'import integration'], cwd=test.ROOT / 'tests',
+                env=wrong_target, text=True, capture_output=True, timeout=20)
+            assert result.returncode != 0 and 'must be a test server' in result.stderr
+        finally:
+            server.shutdown()
+            worker.join(timeout=5)
     wrong_environment = dict(os.environ, BIJHOUDEN_ENV='production', BIJHOUDEN_DB_PASSWORD='validation-only', BIJHOUDEN_PASSWORD_COST='12')
     result = subprocess.run(['python3', '-B', '-c', 'import integration'], cwd=test.ROOT / 'tests',
         env=wrong_environment, text=True, capture_output=True)

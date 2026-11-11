@@ -246,7 +246,21 @@ python3 -B tests/media_security_integration.py
 python3 -B tests/browser_security.py
 ```
 
-The suites check the HTTP server's test-only database **and image-storage fingerprints** before creating fixtures. A production/development target, a server using a different database, or mismatched media storage is rejected. Fixtures and their managed image files are cleaned up after each suite. `p0_hardening.py` additionally requires a test database without an existing administrator so it can verify first-admin provisioning. It also checks that the normal server on port 8080 rejects test targeting; keep that local development server available for that check.
+The suites check the HTTP server's test-only database **and image-storage fingerprints** before creating fixtures. A production/development target, a server using a different database, or mismatched media storage is rejected. Fixtures and their managed image files are cleaned up after each suite. `p0_hardening.py` additionally requires a test database without an existing administrator so it can verify first-admin provisioning. It starts its own disposable HTTP fixture to verify that servers without test identity headers are rejected; no development server is needed for that check.
+
+### GitHub Actions CI
+
+`.github/workflows/ci.yml` runs on pushes to `main`, pull requests targeting `main`, and manual dispatches from the Actions tab:
+
+- PHP 8.4 syntax checks across all PHP files.
+- The regression battery (`tests/run_phase6.py --include-scalability`), including browser/QR checks, plus the standalone cookie-configuration and traversal-assertion tests.
+- A fresh MariaDB 11.4 service loaded from `schema.sql`, with disposable test-only credentials and isolated media, logs and sessions. No repository secrets or production access are required.
+
+The workflow uses GitHub-hosted Ubuntu runners, read-only repository permissions and commit-pinned actions. Pi deployment rehearsals (`tests/pi_*.py`) are intentionally excluded because their host-specific deployment modules are not published. Browser dependencies from `tests/requirements-ci.txt` are installed in a virtual environment only on the disposable runner. Failure diagnostics are retained for seven days; **artifacts are not private on a public repository**, so they contain only synthetic test reports/server logs, not session files, media or database dumps.
+
+This is CI only: pushing code does **not** deploy it or change the running application. Deployment automation is a separate future phase.
+
+To verify CI after publishing, confirm both jobs pass on `main`. Then open a temporary pull request with a PHP syntax error and confirm that the syntax job fails; fix the error and confirm it passes again. Do not merge the intentionally broken revision.
 
 Use a separate session directory for the test server. The authentication suite modifies only its fixture session timestamps there to test expiry without waiting hours. Cost 4 and shortened security settings are allowed only in test mode; production/development bcrypt cost must be at least 10. Run the suites sequentially against a dedicated database because fixture cleanup resets the test rate-limit buckets.
 

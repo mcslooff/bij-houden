@@ -1,0 +1,166 @@
+# Continuous integration: lint and the full regression battery on every push
+# to main and every pull request.
+#
+# The database, media directory, log directory and sessions used here are
+# disposable CI fixtures created for this run only; the credentials below are
+# throwaway values for an ephemeral runner-local database, not production
+# secrets. The integration tests enforce that the target is a dedicated test
+# environment (test database name, isolated media/session paths) before
+# touching anything.
+#
+# Deployment to the live host is deliberately NOT automated here; the
+# production release flow is a separate, operator-reviewed process.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: PHP syntax check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Set up PHP 8.4
+        uses: shivammathur/setup-php@d52fc211a0436f8839a587b3b5b8efddab4744ea # v2
+        with:
+          php-version: '8.4'
+          coverage: none
+      - name: Lint every PHP file
+        run: |
+          status=0
+          while IFS= read -r -d '' file; do
+            php -l "$file" > /dev/null || status=1
+          done < <(find . -name '*.php' -type f -print0)
+          exit $status
+
+  tests:
+    name: Regression battery (PHP 8.4 / MariaDB)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_ROOT_PASSWORD: ci-throwaway-root-password
+          MARIADB_DATABASE: bijhouden_test
+          MARIADB_USER: bijhouden_test_app
+          MARIADB_PASSWORD: ci-throwaway-app-password
+        ports:
+          - 127.0.0.1:3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+    env:
+      BIJHOUDEN_ENV: test
+      BIJHOUDEN_DB_HOST: 127.0.0.1
+      BIJHOUDEN_DB_PORT: '3306'
+      BIJHOUDEN_DB_NAME: bijhouden_test
+      BIJHOUDEN_DB_USER: bijhouden_test_app
+      BIJHOUDEN_DB_PASSWORD: ci-throwaway-app-password
+      BIJHOUDEN_PASSWORD_COST: '4'
+      BIJHOUDEN_IMAGE_STORAGE_PATH: /home/runner/bijhouden-ci-media
+      BIJHOUDEN_DIAGNOSTIC_LOG_DIRECTORY: /home/runner/bijhouden-ci-logs
+      BIJHOUDEN_TEST_TEMP_DIRECTORY: /home/runner/bijhouden-ci-temp
+      BIJHOUDEN_TEST_SESSION_PATH: /home/runner/bijhouden-ci-sessions
+      BIJHOUDEN_TEST_URL: http://127.0.0.1:8081
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up PHP 8.4
+        uses: shivammathur/setup-php@d52fc211a0436f8839a587b3b5b8efddab4744ea # v2
+        with:
+          php-version: '8.4'
+          extensions: mysqli, pdo_mysql, gd, mbstring
+          coverage: none
+
+      - name: Install browser-test dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq mariadb-client python3-venv
+          /usr/bin/python3 -m venv "$RUNNER_TEMP/ci-python"
+          "$RUNNER_TEMP/ci-python/bin/python" -m pip install -r tests/requirements-ci.txt
+          echo "$RUNNER_TEMP/ci-python/bin" >> "$GITHUB_PATH"
+          if ! command -v chromium > /dev/null; then
+            chrome="$(command -v google-chrome || command -v chromium-browser)"
+            test -n "$chrome"
+            sudo ln -s "$chrome" /usr/local/bin/chromium
+          fi
+          "$RUNNER_TEMP/ci-python/bin/python" -c 'import cv2, numpy; from PIL import Image'
+          chromium --version
+
+      - name: Prepare isolated test directories
+        run: |
+          umask 077
+          mkdir -p "$BIJHOUDEN_IMAGE_STORAGE_PATH" "$BIJHOUDEN_DIAGNOSTIC_LOG_DIRECTORY" \
+                   "$BIJHOUDEN_TEST_TEMP_DIRECTORY" "$BIJHOUDEN_TEST_SESSION_PATH" /tmp/opencode
+
+      - name: Load schema into the throwaway test database
+        run: |
+          mariadb --host=127.0.0.1 --port=3306 --user=bijhouden_test_app --password=ci-throwaway-app-password \
+                --default-character-set=utf8mb4 bijhouden_test < schema.sql
+          mariadb --host=127.0.0.1 --port=3306 --user=bijhouden_test_app --password=ci-throwaway-app-password \
+                -e 'SHOW TABLES;' bijhouden_test
+
+      - name: Start the dedicated test server
+        run: |
+          php -d session.save_path="$BIJHOUDEN_TEST_SESSION_PATH" \
+              -S 127.0.0.1:8081 -t public public/router.php > "$BIJHOUDEN_TEST_TEMP_DIRECTORY/server.log" 2>&1 &
+          server_pid=$!
+          echo "$server_pid" > "$BIJHOUDEN_TEST_TEMP_DIRECTORY/server.pid"
+          for attempt in $(seq 1 30); do
+            kill -0 "$server_pid" || { cat "$BIJHOUDEN_TEST_TEMP_DIRECTORY/server.log"; exit 1; }
+            if curl -fsS -o /dev/null --max-time 2 "$BIJHOUDEN_TEST_URL/login.php"; then
+              echo "Test server is up"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Test server did not come up"; cat "$BIJHOUDEN_TEST_TEMP_DIRECTORY/server.log"; exit 1
+
+      - name: Run the regression battery
+        run: |
+          python3 tests/run_phase6.py --include-scalability --report-directory "$BIJHOUDEN_TEST_TEMP_DIRECTORY/report"
+
+      - name: Run the standalone validation suites
+        run: |
+          python3 tests/session_cookie_configuration.py
+          python3 tests/p0_traversal_response.py
+
+      # Artifacts on a public repository are not private. Only synthetic test
+      # reports/server logs are uploaded; never sessions, media or DB dumps.
+      - name: Upload synthetic test diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: test-report
+          path: |
+            ${{ env.BIJHOUDEN_TEST_TEMP_DIRECTORY }}/report/
+            ${{ env.BIJHOUDEN_TEST_TEMP_DIRECTORY }}/server.log
+          retention-days: 7
+
+      - name: Stop the test server
+        if: always()
+        run: |
+          if test -f "$BIJHOUDEN_TEST_TEMP_DIRECTORY/server.pid"; then
+            kill "$(cat "$BIJHOUDEN_TEST_TEMP_DIRECTORY/server.pid")" 2>/dev/null || true
+          fi
