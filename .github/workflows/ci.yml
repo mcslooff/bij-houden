@@ -96,7 +96,7 @@ jobs:
       - name: Install browser-test dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq mariadb-client python3-venv
+          sudo apt-get install -y -qq mariadb-client python3-venv poppler-utils
           /usr/bin/python3 -m venv "$RUNNER_TEMP/ci-python"
           "$RUNNER_TEMP/ci-python/bin/python" -m pip install -r tests/requirements-ci.txt
           echo "$RUNNER_TEMP/ci-python/bin" >> "$GITHUB_PATH"
@@ -106,6 +106,8 @@ jobs:
           echo "BIJHOUDEN_TEST_BROWSER=$chrome" >> "$GITHUB_ENV"
           "$RUNNER_TEMP/ci-python/bin/python" -c 'import cv2, numpy; from PIL import Image'
           "$chrome" --version
+          command -v pdftotext
+          command -v pdftoppm
 
       - name: Prepare isolated test directories
         run: |
