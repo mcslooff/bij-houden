@@ -114,6 +114,17 @@ jobs:
           mkdir -p "$BIJHOUDEN_IMAGE_STORAGE_PATH" "$BIJHOUDEN_DIAGNOSTIC_LOG_DIRECTORY" \
                    "$BIJHOUDEN_TEST_TEMP_DIRECTORY" "$BIJHOUDEN_TEST_SESSION_PATH" /tmp/opencode
 
+      - name: Allow concurrency tests to observe database locks
+        # PROCESS is required for INNODB_LOCK_WAITS/INNODB_TRX. Grant it only
+        # inside this disposable container, never to a production account.
+        env:
+          MARIADB_CONTAINER: ${{ job.services.mariadb.id }}
+        run: |
+          docker exec "$MARIADB_CONTAINER" mariadb --user=root --password=ci-throwaway-root-password \
+            -e "GRANT PROCESS ON *.* TO 'bijhouden_test_app'@'%';"
+          mariadb --host=127.0.0.1 --port=3306 --user=bijhouden_test_app --password=ci-throwaway-app-password \
+            -e 'SELECT COUNT(*) AS visible_lock_waits FROM information_schema.INNODB_LOCK_WAITS; SELECT COUNT(*) AS visible_transactions FROM information_schema.INNODB_TRX;'
+
       - name: Load schema into the throwaway test database
         run: |
           mariadb --host=127.0.0.1 --port=3306 --user=bijhouden_test_app --password=ci-throwaway-app-password \
